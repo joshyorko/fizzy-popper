@@ -182,12 +182,26 @@ export class FizzyClient {
     return this.request<FizzyBoard[]>("/boards")
   }
 
+  async createBoard(input: { name: string; all_access?: boolean }): Promise<FizzyBoard> {
+    return this.request<FizzyBoard>("/boards", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  }
+
   async getBoard(boardId: string): Promise<FizzyBoard> {
     return this.request<FizzyBoard>(`/boards/${boardId}`)
   }
 
   async listColumns(boardId: string): Promise<FizzyColumn[]> {
     return this.request<FizzyColumn[]>(`/boards/${boardId}/columns`)
+  }
+
+  async createColumn(boardId: string, input: { name: string; color?: string }): Promise<FizzyColumn> {
+    return this.request<FizzyColumn>(`/boards/${boardId}/columns`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
   }
 
   // ── Card operations ──
@@ -203,6 +217,13 @@ export class FizzyClient {
 
   async getCard(cardNumber: number): Promise<FizzyCard> {
     return this.request<FizzyCard>(`/cards/${cardNumber}`)
+  }
+
+  async createCard(input: { board_id: string; title: string; description?: string }): Promise<FizzyCard> {
+    return this.request<FizzyCard>("/cards", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
   }
 
   async listComments(cardNumber: number): Promise<FizzyComment[]> {
@@ -233,6 +254,13 @@ export class FizzyClient {
     await this.request<void>(`/cards/${cardNumber}/taggings`, {
       method: "POST",
       body: JSON.stringify({ tag_title: tagTitle }),
+    })
+  }
+
+  async createStep(cardNumber: number, input: { content: string; completed?: boolean }): Promise<FizzyStep> {
+    return this.request<FizzyStep>(`/cards/${cardNumber}/steps`, {
+      method: "POST",
+      body: JSON.stringify(input),
     })
   }
 
@@ -283,7 +311,7 @@ function parseLinkNext(header: string | null): string | null {
 
 // ── Golden ticket parsing ──
 
-const BACKEND_TAGS = ["claude", "codex", "opencode", "anthropic", "openai"] as const
+const BACKEND_TAGS = ["claude", "codex", "opencode", "anthropic", "openai", "command"] as const
 const COMPLETION_TAG_PREFIX = "move-to-"
 
 export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): GoldenTicket | null {

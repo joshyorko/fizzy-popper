@@ -7,7 +7,7 @@ import {
   isWebhookFresh,
   FizzyClient,
 } from "../src/fizzy.js"
-import { makeCard, makeGoldenTicketCard, makeColumn, makeConfig } from "./fixtures.js"
+import { makeCard, makeGoldenTicketCard, makeColumn, makeConfig, makeBoard } from "./fixtures.js"
 
 describe("parseGoldenTicket", () => {
   it("returns null for a card without agent-instructions tag", () => {
@@ -67,6 +67,13 @@ describe("parseGoldenTicket", () => {
     const ticket = parseGoldenTicket(card, "claude")
 
     expect(ticket!.backend).toBe("openai")
+  })
+
+  it("detects command backend tag", () => {
+    const card = makeGoldenTicketCard({ tags: ["agent-instructions", "command"] })
+    const ticket = parseGoldenTicket(card, "claude")
+
+    expect(ticket!.backend).toBe("command")
   })
 
   it("picks first backend tag when multiple are present", () => {
@@ -316,6 +323,90 @@ describe("FizzyClient", () => {
   })
 
   describe("mutations", () => {
+    it("createBoard sends board fields", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify(makeBoard({ id: "board-new", name: "Agent Playground" })), { status: 201 }),
+      )
+
+      const result = await client.createBoard({ name: "Agent Playground", all_access: true })
+
+      expect(result.id).toBe("board-new")
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://app.fizzy.do/123/boards",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ name: "Agent Playground", all_access: true }),
+        }),
+      )
+
+      fetchSpy.mockRestore()
+    })
+
+    it("createColumn sends column fields", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify(makeColumn({ id: "col-ready", name: "Ready for Agents" })), { status: 201 }),
+      )
+
+      const result = await client.createColumn("board-new", { name: "Ready for Agents", color: "blue" })
+
+      expect(result.id).toBe("col-ready")
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://app.fizzy.do/123/boards/board-new/columns",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ name: "Ready for Agents", color: "blue" }),
+        }),
+      )
+
+      fetchSpy.mockRestore()
+    })
+
+    it("createCard sends board, title, and description", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify(makeCard({ id: "card-new", number: 77, title: "Triage Agent" })), { status: 201 }),
+      )
+
+      const result = await client.createCard({
+        board_id: "board-new",
+        title: "Triage Agent",
+        description: "Work this column.",
+      })
+
+      expect(result.number).toBe(77)
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://app.fizzy.do/123/cards",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            board_id: "board-new",
+            title: "Triage Agent",
+            description: "Work this column.",
+          }),
+        }),
+      )
+
+      fetchSpy.mockRestore()
+    })
+
+    it("createStep sends step content and completed state", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ id: "step-new", content: "Inspect the repository", completed: false }), { status: 201 }),
+      )
+
+      const result = await client.createStep(77, { content: "Inspect the repository", completed: false })
+
+      expect(result.id).toBe("step-new")
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://app.fizzy.do/123/cards/77/steps",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ content: "Inspect the repository", completed: false }),
+        }),
+      )
+
+      fetchSpy.mockRestore()
+    })
+
     it("closeCard sends POST to closure endpoint", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
         new Response(null, { status: 204 }),

@@ -44,11 +44,20 @@ npx tsx src/cli.ts setup    # Interactive setup wizard
 npx tsx src/cli.ts start    # Watch boards
 ```
 
-The setup wizard asks for your Fizzy API token, picks your boards, detects installed backends, and writes `.fizzy-popper/config.yml`.
+The setup wizard asks for your Fizzy API token, detects installed backends, configures watched boards, and writes `.fizzy-popper/config.yml`. It can use an existing board or create a starter board with the columns, golden ticket, and optional test card already in place.
 
 ## Setting up a board for agents
 
 You need three things: a board, a golden ticket card, and a work card to test with.
+
+`fizzy-popper setup` can create a starter board:
+
+- Board: `Agent Playground: <repo folder>`
+- Columns: `Ready for Agents` and `Done`
+- Golden ticket: tagged `#agent-instructions`, your selected backend tag, and `#move-to-done`
+- Optional test card in the agent column
+
+You can also create the same structure yourself.
 
 **Using the [Fizzy CLI](https://github.com/robzolkos/fizzy-cli):**
 
@@ -79,8 +88,6 @@ fizzy card column CARD_NUMBER --column TRIAGE_COLUMN_ID
 
 **Or in the Fizzy UI:** Create a card, tag it `#agent-instructions` plus a backend tag like `#codex` or `#claude`, write your prompt in the description, add checklist items as steps, and drag it into the column you want to automate. Then drag a work card into that column and watch the agent go.
 
-**With an agent CLI:** Run `/setup-test-board` — there's a built-in skill that walks you through the whole thing using the Fizzy CLI. Use `#codex` for Codex, `#claude` for Claude Code, or another supported backend tag.
-
 ## Golden tickets
 
 A golden ticket is a card tagged `#agent-instructions` that lives in the column it configures. No column naming conventions required — the golden ticket's presence is the signal.
@@ -103,6 +110,7 @@ The first matching tag picks the backend. Falls back to `default_backend` in con
 | `#opencode` | OpenCode CLI |
 | `#anthropic` | Anthropic Messages API |
 | `#openai` | OpenAI Chat Completions API |
+| `#command` | Custom command backend |
 
 ### Completion tags
 
@@ -139,7 +147,7 @@ boards:
   - board_id_2
 
 agent:
-  max_concurrent: 5
+  max_concurrent: 1
   timeout: 300000
   default_backend: claude
 

@@ -44,11 +44,11 @@ fizzy-popper is a daemon that bridges Fizzy kanban boards and AI agent execution
 | # | Component | Responsibility |
 |---|-----------|---------------|
 | 1 | **Golden Ticket Loader** | Discovers `#agent-instructions` cards per column across all watched boards. Builds the column-to-instruction mapping. |
-| 2 | **Config Layer** | Typed getters for service config. YAML file with `$ENV_VAR` interpolation, validated by schema. |
+| 2 | **Config Layer** | Loads service config, resolves `$ENV_VAR` placeholders, and validates required fields. |
 | 3 | **Fizzy Client** | REST API client for boards, columns, cards, comments, closures, triaging, and tagging. Handles pagination via `Link` headers. Webhook signature verification. |
 | 4 | **Event Ingester** | Dual-mode: webhook HTTP receiver (primary) + reconciliation poller (fallback and consistency). |
 | 5 | **Router** | Maps Fizzy events and reconciliation findings to dispatch decisions: spawn, cancel, refresh golden tickets, or ignore. |
-| 6 | **Supervisor** | In-memory registry of running agent attempts. Enforces concurrency cap, dedup by card ID, cancellation via abort signal. Tracks recent completions. |
+| 6 | **Supervisor** | In-memory registry of running agent attempts. Enforces concurrency cap, dedup by card ID, and backend-appropriate cancellation. Tracks recent completions. |
 | 7 | **Agent Runner** | Builds the prompt from golden ticket + card + comments. Resolves backend. Executes with timeout and abort. Posts result or error. Executes on_complete action. |
 | 8 | **Status Surface** | HTTP endpoint (`GET /status`) returning JSON: active agents, recent completions, active count. Health check at `GET /health`. |
 | 9 | **Logging** | Structured console output: timestamps, card numbers, column names, backend names, durations, errors. |
@@ -134,7 +134,7 @@ fizzy-popper is a daemon that bridges Fizzy kanban boards and AI agent execution
 | `backend_name` | string | Resolved backend |
 | `started_at` | datetime | |
 | `status` | enum | `running`, `succeeded`, `failed`, `timed_out`, `cancelled` |
-| `abort_controller` | AbortController | Signal for cancellation |
+| `cancellation_handle` | runtime-specific | Token, process handle, or equivalent mechanism used to cancel backend execution |
 
 ### Service Config
 
@@ -176,6 +176,42 @@ polling:
   interval: 30000                  # ms, default 30 seconds
 ```
 
+### Setup Bootstrap
+
+Implementations SHOULD provide an interactive setup flow that creates or selects the watched board surface and writes `.fizzy-popper/config.yml`.
+
+Required setup inputs:
+
+1. Fizzy API URL, defaulting to `https://app.fizzy.do`.
+2. Fizzy API token, validated with `GET /my/identity`.
+3. Fizzy account slug selected from the identity response.
+4. Default backend selected from detected local backends and configured API backends.
+
+After authentication and backend selection, setup MUST offer these board configuration paths:
+
+1. **Create recommended starter board.**
+2. **Use existing board(s).**
+3. **Customize starter board.**
+
+The recommended starter board creates:
+
+| Resource | Default |
+|----------|---------|
+| Board | `Agent Playground: <working-directory-name>` |
+| Agent column | `Ready for Agents` |
+| Completion column | `Done` |
+| Golden ticket title | `Repo Agent` |
+| Golden ticket tags | `#agent-instructions`, selected backend tag, `#move-to-done` |
+| Golden ticket prompt | Instructs the agent to inspect the card, read relevant files, make the smallest safe change, run appropriate checks, summarize results, and not commit unless requested |
+| Golden ticket steps | Inspect request; make smallest safe change; run checks; summarize |
+| Smoke-test card | Optional, default yes; placed in the agent column and processed only after the service starts |
+
+Custom starter board follows the same shape but asks the operator for board, column, golden ticket title, and prompt text. The completion tag MUST target the chosen completion column using the `move-to-<column>` tag format.
+
+Setup-created config MUST set `boards` to the selected or created board IDs. For starter-board onboarding, implementations SHOULD default `agent.max_concurrent` to `1` so only one agent edits the working directory at a time.
+
+The setup bootstrap MUST use the Fizzy API directly for board/card provisioning. A separate Fizzy CLI MAY be used as an optional source for local defaults such as API URL, but it MUST NOT be required for bootstrap.
+
 ---
 
 ## 5. Golden Ticket Pattern
@@ -208,6 +244,7 @@ The first matching tag determines the backend. If none match, `agent.default_bac
 | `#opencode` | OpenCode CLI |
 | `#anthropic` | Anthropic Messages API |
 | `#openai` | OpenAI Chat Completions API |
+| `#command` | Custom command backend |
 
 ### Completion Tags
 
@@ -355,7 +392,7 @@ execute(prompt: string, options: BackendOptions) → AgentResult
 |-------|------|-------|
 | `model` | string (optional) | Override backend's configured model |
 | `timeout` | integer (ms) | Maximum execution time |
-| `signal` | AbortSignal | Cancellation signal |
+| `cancel_token` | runtime-specific | Cancellation token, signal, process handle, or equivalent |
 
 **AgentResult:**
 | Field | Type | Notes |
@@ -397,7 +434,7 @@ CLI probes use a 5-second timeout. Failure means the backend is not available.
 
 - **Global concurrency cap.** `agent.max_concurrent` from config. Default 5. When at capacity, new spawn requests are logged and skipped — the next reconciliation tick will pick them up if capacity frees.
 - **One agent per card.** Card ID is the dedup key. A spawn request for a card with a running agent is ignored.
-- **Cancellation.** Agents are cancellable via an abort signal. Cancel triggers include: card closed, card postponed, card sent back to triage, card moved to unwatched board, card moved out of agent column (orphan detection), and service shutdown.
+- **Cancellation.** Agents are cancellable through the backend's runtime-appropriate cancellation mechanism. Cancel triggers include: card closed, card postponed, card sent back to triage, card moved to unwatched board, card moved out of agent column (orphan detection), and service shutdown.
 - **No retry or backoff in v1.** Failed agents post an error and stop. The card remains in the column; a human or the reconciler can re-trigger.
 - **Graceful shutdown.** On `SIGINT` or `SIGTERM`: stop the reconciler timer, stop the webhook server, cancel all active agents, exit.
 
@@ -483,10 +520,14 @@ Subset of endpoints used by fizzy-popper. All requests require `Authorization: B
 
 | Method | Path | Body | Effect |
 |--------|------|------|--------|
+| `POST` | `/:account/boards` | `{ name, all_access? }` | Create a board |
+| `POST` | `/:account/boards/:id/columns` | `{ name, color? }` | Create a column on a board |
+| `POST` | `/:account/cards` | `{ board_id, title, description? }` | Create a card |
 | `POST` | `/:account/cards/:number/comments` | `{ comment: { body } }` | Post a comment (HTML body) |
 | `POST` | `/:account/cards/:number/closure` | — | Close the card |
 | `POST` | `/:account/cards/:number/triage` | `{ column_id }` | Move card to a column |
 | `POST` | `/:account/cards/:number/taggings` | `{ tag_title }` | Toggle a tag on/off |
+| `POST` | `/:account/cards/:number/steps` | `{ content, completed? }` | Create a checklist step |
 
 ### Pagination
 
@@ -583,7 +624,7 @@ return 200 ok
 if supervisor.isRunning(card.id): return (already running)
 if supervisor.atCapacity(): return (at capacity)
 
-create AbortController
+create cancellation handle
 register AgentRun in active map
 
 async:
@@ -592,7 +633,7 @@ async:
   prompt = buildPrompt(goldenTicket, fullCard, comments)
   backend = createBackend(goldenTicket.backend, config)
 
-  result = backend.execute(prompt, { timeout, signal })
+  result = backend.execute(prompt, { timeout, cancel_token })
 
   if aborted: set status=cancelled, remove from active, return
 
@@ -620,7 +661,7 @@ async:
 ### Phase 1: Core Infrastructure
 - [ ] Config layer: YAML loading, env var interpolation, schema validation
 - [ ] Fizzy client: all read endpoints (boards, columns, cards, comments, identity)
-- [ ] Fizzy client: all write endpoints (post comment, close card, triage card, toggle tag)
+- [ ] Fizzy client: all write endpoints (create board/column/card/step, post comment, close card, triage card, toggle tag)
 - [ ] Fizzy client: pagination via Link header
 - [ ] Webhook signature verification + timestamp freshness check
 - [ ] Golden ticket parser: tag-based backend selection, completion action derivation
@@ -649,7 +690,7 @@ async:
 - [ ] Health endpoint (GET /health)
 - [ ] Structured logging: events, routing decisions, agent lifecycle
 - [ ] Graceful shutdown (SIGINT/SIGTERM): stop reconciler, stop server, cancel all agents
-- [ ] CLI: setup wizard (interactive config generation)
+- [ ] Setup wizard: auth, backend selection, existing-board selection, starter-board bootstrap
 - [ ] CLI: start command
 - [ ] CLI: status command (board summary, golden tickets, active agents)
 - [ ] CLI: boards command (list boards and columns)

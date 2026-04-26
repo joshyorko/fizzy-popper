@@ -1,8 +1,10 @@
 ---
-description: "Set up a Fizzy board for dogfooding fizzy-popper with the Fizzy CLI"
+description: "Development/testing helper for setting up a Fizzy board with the Fizzy CLI"
 ---
 
-Help me set up a test board on Fizzy to dogfood fizzy-popper. Walk me through it step by step using the Fizzy CLI (`fizzy`).
+Help me set up a test board on Fizzy to dogfood fizzy-popper using the Fizzy CLI (`fizzy`).
+
+Use this only as a development/testing helper, especially when testing the workflow before the `fizzy-popper setup` command is available or installed. For normal use, prefer `fizzy-popper setup`.
 
 Here's what we need:
 
