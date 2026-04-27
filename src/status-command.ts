@@ -21,6 +21,10 @@ type StatusRouter = Pick<Router, "loadBoardConfigs" | "getBoardConfigs">
 
 type StatusLogger = Pick<typeof log, "info" | "board" | "column" | "header" | "agentSpawn" | "agentStep">
 
+type StatusFetchResult =
+  | { ok: true; status: StatusResponse }
+  | { ok: false; message: string }
+
 export async function runStatusCommand(
   config: Config,
   router: StatusRouter,
@@ -39,26 +43,50 @@ export async function runStatusCommand(
 
   renderBoardSummary(boardConfigs, logger)
 
-  const status = await fetchStatus(config.webhook.port, fetchImpl)
-  if (!status) {
-    logger.info(`Status server unavailable at ${statusUrl(config.webhook.port)}. Start fizzy-popper to see live agents.`)
+  const statusResult = await fetchStatus(config.webhook.port, fetchImpl)
+  if (!statusResult.ok) {
+    logger.info(statusResult.message)
     return
   }
 
-  renderActiveAgents(status.active, logger)
+  renderActiveAgents(statusResult.status.active, logger)
 }
 
-async function fetchStatus(port: number, fetchImpl: typeof fetch): Promise<StatusResponse | null> {
+async function fetchStatus(port: number, fetchImpl: typeof fetch): Promise<StatusFetchResult> {
+  const url = statusUrl(port)
+
   try {
-    const response = await fetchImpl(statusUrl(port))
-    if (!response.ok) return null
+    const response = await fetchImpl(url)
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: `Unable to read live status from ${url} (HTTP ${response.status}). Check the running fizzy-popper service.`,
+      }
+    }
 
-    const body = await response.json() as unknown
-    if (!isStatusResponse(body)) return null
+    let body: unknown
+    try {
+      body = await response.json() as unknown
+    } catch {
+      return {
+        ok: false,
+        message: `Unable to read live status from ${url} (invalid JSON response). Check the running fizzy-popper service.`,
+      }
+    }
 
-    return body
+    if (!isStatusResponse(body)) {
+      return {
+        ok: false,
+        message: `Unable to read live status from ${url} (invalid response payload). Check the running fizzy-popper service.`,
+      }
+    }
+
+    return { ok: true, status: body }
   } catch {
-    return null
+    return {
+      ok: false,
+      message: `Unable to read live status from ${url} (service unreachable). Start fizzy-popper to see live agents.`,
+    }
   }
 }
 
@@ -68,13 +96,30 @@ function statusUrl(port: number): string {
 
 function formatRunningTime(startedAt: string): string {
   const startedAtMs = new Date(startedAt).getTime()
-  if (Number.isNaN(startedAtMs)) return "unknown"
-  return ((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)
+  if (Number.isNaN(startedAtMs)) return "unknown time"
+  return `${((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)}s`
 }
 
 function isStatusResponse(value: unknown): value is StatusResponse {
   if (!value || typeof value !== "object") return false
-  return "active" in value && Array.isArray(value.active)
+  return "active" in value && Array.isArray(value.active) && value.active.every(isActiveStatusRun)
+}
+
+function isActiveStatusRun(value: unknown): value is ActiveStatusRun {
+  if (!value || typeof value !== "object") return false
+
+  return (
+    "card_number" in value
+    && typeof value.card_number === "number"
+    && "card_title" in value
+    && typeof value.card_title === "string"
+    && "column" in value
+    && typeof value.column === "string"
+    && "backend" in value
+    && typeof value.backend === "string"
+    && "started_at" in value
+    && typeof value.started_at === "string"
+  )
 }
 
 function renderBoardSummary(boardConfigs: Map<string, BoardConfig>, logger: StatusLogger): void {
@@ -95,6 +140,6 @@ function renderActiveAgents(active: ActiveStatusRun[], logger: StatusLogger): vo
   logger.header("Active Agents")
   for (const run of active) {
     logger.agentSpawn(run.card_number, run.card_title, run.column)
-    logger.agentStep(`${run.backend} — running for ${formatRunningTime(run.started_at)}s`)
+    logger.agentStep(`${run.backend} — running for ${formatRunningTime(run.started_at)}`)
   }
 }

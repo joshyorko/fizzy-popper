@@ -62,7 +62,36 @@ describe("runStatusCommand", () => {
     expect(logger.info).not.toHaveBeenCalledWith("No agents currently running.")
   })
 
-  it("does not incorrectly report no agents when the local service is unavailable", async () => {
+  it("renders unknown time cleanly for invalid timestamps", async () => {
+    const logger = makeLogger()
+    const router = {
+      loadBoardConfigs: vi.fn().mockResolvedValue(undefined),
+      getBoardConfigs: vi.fn().mockReturnValue(new Map([
+        ["board-1", {
+          boardId: "board-1",
+          boardName: "work-ai-board",
+          goldenTickets: new Map([["col-1", makeGoldenTicket({ column_name: "Triage", backend: "codex" })]]),
+        }],
+      ])),
+    }
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      active: [
+        {
+          card_number: 255,
+          card_title: "Fix RPA Playwright browser automation failures from PROD run 24919915027",
+          column: "Triage",
+          backend: "codex",
+          started_at: "not-a-date",
+        },
+      ],
+    })))
+
+    await runStatusCommand(makeConfig(), router, fetchImpl, logger)
+
+    expect(logger.agentStep).toHaveBeenCalledWith("codex — running for unknown time")
+  })
+
+  it("reports when the local service is unreachable", async () => {
     const logger = makeLogger()
     const router = {
       loadBoardConfigs: vi.fn().mockResolvedValue(undefined),
@@ -78,7 +107,50 @@ describe("runStatusCommand", () => {
 
     await runStatusCommand(makeConfig(), router, fetchImpl, logger)
 
-    expect(logger.info).toHaveBeenCalledWith("Status server unavailable at http://127.0.0.1:4567/status. Start fizzy-popper to see live agents.")
+    expect(logger.info).toHaveBeenCalledWith("Unable to read live status from http://127.0.0.1:4567/status (service unreachable). Start fizzy-popper to see live agents.")
+    expect(logger.info).not.toHaveBeenCalledWith("No agents currently running.")
+  })
+
+  it("reports when the local service returns an HTTP error", async () => {
+    const logger = makeLogger()
+    const router = {
+      loadBoardConfigs: vi.fn().mockResolvedValue(undefined),
+      getBoardConfigs: vi.fn().mockReturnValue(new Map([
+        ["board-1", {
+          boardId: "board-1",
+          boardName: "work-ai-board",
+          goldenTickets: new Map([["col-1", makeGoldenTicket({ column_name: "Triage", backend: "codex" })]]),
+        }],
+      ])),
+    }
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }))
+
+    await runStatusCommand(makeConfig(), router, fetchImpl, logger)
+
+    expect(logger.info).toHaveBeenCalledWith("Unable to read live status from http://127.0.0.1:4567/status (HTTP 500). Check the running fizzy-popper service.")
+    expect(logger.info).not.toHaveBeenCalledWith("No agents currently running.")
+  })
+
+  it("reports when the local service returns an invalid payload", async () => {
+    const logger = makeLogger()
+    const router = {
+      loadBoardConfigs: vi.fn().mockResolvedValue(undefined),
+      getBoardConfigs: vi.fn().mockReturnValue(new Map([
+        ["board-1", {
+          boardId: "board-1",
+          boardName: "work-ai-board",
+          goldenTickets: new Map([["col-1", makeGoldenTicket({ column_name: "Triage", backend: "codex" })]]),
+        }],
+      ])),
+    }
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      active: [null],
+    })))
+
+    await runStatusCommand(makeConfig(), router, fetchImpl, logger)
+
+    expect(logger.info).toHaveBeenCalledWith("Unable to read live status from http://127.0.0.1:4567/status (invalid response payload). Check the running fizzy-popper service.")
+    expect(logger.agentSpawn).not.toHaveBeenCalled()
     expect(logger.info).not.toHaveBeenCalledWith("No agents currently running.")
   })
 })
