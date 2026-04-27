@@ -14,6 +14,8 @@ interface StatusResponse {
   active: ActiveStatusRun[]
 }
 
+const MS_PER_SECOND = 1000
+
 type StatusRouter = Pick<Router, "loadBoardConfigs" | "getBoardConfigs">
 
 type StatusLogger = Pick<typeof log, "info" | "board" | "column" | "header" | "agentSpawn" | "agentStep">
@@ -86,7 +88,7 @@ function renderActiveAgents(active: ActiveStatusRun[], logger: StatusLogger): vo
     const startedAtMs = Date.parse(run.started_at)
     const runningFor = Number.isNaN(startedAtMs)
       ? "unknown"
-      : ((Date.now() - startedAtMs) / 1000).toFixed(0)
+      : ((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)
 
     logger.agentStep(`${run.backend} — running for ${runningFor}s`)
   }
