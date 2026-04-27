@@ -85,7 +85,7 @@ function renderActiveAgents(active: ActiveStatusRun[], logger: StatusLogger): vo
   for (const run of active) {
     logger.agentSpawn(run.card_number, run.card_title, run.column)
 
-    const startedAtMs = Date.parse(run.started_at)
+    const startedAtMs = new Date(run.started_at).getTime()
     const runningFor = Number.isNaN(startedAtMs)
       ? "unknown"
       : ((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)
