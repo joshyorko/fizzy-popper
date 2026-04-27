@@ -8,6 +8,7 @@ import { Supervisor } from "./supervisor.js"
 import { Reconciler } from "./reconciler.js"
 import { WebhookServer } from "./server.js"
 import { runSetup } from "./setup.js"
+import { runStatusCommand } from "./status-command.js"
 import * as log from "./log.js"
 
 const program = new Command()
@@ -44,35 +45,7 @@ program
     const config = loadConfig()
     const client = new FizzyClient(config)
     const router = new Router(config, client)
-    const supervisor = new Supervisor(config, client)
-
-    const boardIds = config.boards === "all" ? [] : config.boards
-
-    await router.loadBoardConfigs(boardIds.length > 0 ? boardIds : undefined)
-
-    const boardConfigs = router.getBoardConfigs()
-    if (boardConfigs.size === 0) {
-      log.info("No boards configured.")
-      return
-    }
-
-    for (const [, bc] of boardConfigs) {
-      log.board(bc.boardName, `${bc.goldenTickets.size} agent column(s)`)
-      for (const [, ticket] of bc.goldenTickets) {
-        log.column(ticket.column_name, ticket.backend)
-      }
-    }
-
-    const active = supervisor.getActiveRuns()
-    if (active.length === 0) {
-      log.info("No agents currently running.")
-    } else {
-      log.header("Active Agents")
-      for (const run of active) {
-        log.agentSpawn(run.card_number, run.card_title, run.column_name)
-        log.agentStep(`${run.backend_name} — running for ${((Date.now() - run.started_at.getTime()) / 1000).toFixed(0)}s`)
-      }
-    }
+    await runStatusCommand(config, router)
   })
 
 program
