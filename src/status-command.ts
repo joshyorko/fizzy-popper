@@ -15,6 +15,7 @@ interface StatusResponse {
 }
 
 const MS_PER_SECOND = 1000
+const LOCAL_STATUS_HOST = "http://127.0.0.1"
 
 type StatusRouter = Pick<Router, "loadBoardConfigs" | "getBoardConfigs">
 
@@ -40,7 +41,7 @@ export async function runStatusCommand(
 
   const status = await fetchStatus(config.webhook.port, fetchImpl)
   if (!status) {
-    logger.info(`Status server unavailable at http://127.0.0.1:${config.webhook.port}/status. Start fizzy-popper to see live agents.`)
+    logger.info(`Status server unavailable at ${statusUrl(config.webhook.port)}. Start fizzy-popper to see live agents.`)
     return
   }
 
@@ -49,7 +50,7 @@ export async function runStatusCommand(
 
 async function fetchStatus(port: number, fetchImpl: typeof fetch): Promise<StatusResponse | null> {
   try {
-    const response = await fetchImpl(`http://127.0.0.1:${port}/status`)
+    const response = await fetchImpl(statusUrl(port))
     if (!response.ok) return null
 
     const body = await response.json() as unknown
@@ -59,6 +60,10 @@ async function fetchStatus(port: number, fetchImpl: typeof fetch): Promise<Statu
   } catch {
     return null
   }
+}
+
+function statusUrl(port: number): string {
+  return `${LOCAL_STATUS_HOST}:${port}/status`
 }
 
 function isStatusResponse(value: unknown): value is StatusResponse {
