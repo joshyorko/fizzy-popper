@@ -66,6 +66,12 @@ function statusUrl(port: number): string {
   return `${LOCAL_STATUS_HOST}:${port}/status`
 }
 
+function formatRunningTime(startedAt: string): string {
+  const startedAtMs = new Date(startedAt).getTime()
+  if (Number.isNaN(startedAtMs)) return "unknown"
+  return ((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)
+}
+
 function isStatusResponse(value: unknown): value is StatusResponse {
   if (!value || typeof value !== "object") return false
   return "active" in value && Array.isArray(value.active)
@@ -89,12 +95,6 @@ function renderActiveAgents(active: ActiveStatusRun[], logger: StatusLogger): vo
   logger.header("Active Agents")
   for (const run of active) {
     logger.agentSpawn(run.card_number, run.card_title, run.column)
-
-    const startedAtMs = new Date(run.started_at).getTime()
-    const runningFor = Number.isNaN(startedAtMs)
-      ? "unknown"
-      : ((Date.now() - startedAtMs) / MS_PER_SECOND).toFixed(0)
-
-    logger.agentStep(`${run.backend} — running for ${runningFor}s`)
+    logger.agentStep(`${run.backend} — running for ${formatRunningTime(run.started_at)}s`)
   }
 }
