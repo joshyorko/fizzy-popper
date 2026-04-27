@@ -40,7 +40,7 @@ export async function runStatusCommand(
 
   const status = await fetchStatus(config.webhook.port, fetchImpl)
   if (!status) {
-    logger.info(`Status server unavailable on :${config.webhook.port}. Start fizzy-popper to see live agents.`)
+    logger.info(`Status server unavailable at http://127.0.0.1:${config.webhook.port}/status. Start fizzy-popper to see live agents.`)
     return
   }
 

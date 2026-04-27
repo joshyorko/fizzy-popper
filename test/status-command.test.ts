@@ -78,7 +78,7 @@ describe("runStatusCommand", () => {
 
     await runStatusCommand(makeConfig(), router, fetchImpl, logger)
 
-    expect(logger.info).toHaveBeenCalledWith("Status server unavailable on :4567. Start fizzy-popper to see live agents.")
+    expect(logger.info).toHaveBeenCalledWith("Status server unavailable at http://127.0.0.1:4567/status. Start fizzy-popper to see live agents.")
     expect(logger.info).not.toHaveBeenCalledWith("No agents currently running.")
   })
 })
