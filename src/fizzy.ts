@@ -91,6 +91,7 @@ export interface GoldenTicket {
   description: string
   steps: FizzyStep[]
   backend: string
+  workspace?: string
   on_complete: "comment" | "close" | string // "move:<column_name>"
   title: string
 }
@@ -103,6 +104,8 @@ export interface AgentRun {
   card_title: string
   column_name: string
   backend_name: string
+  workspace_name?: string
+  workspace_path?: string
   started_at: Date
   status: "running" | "succeeded" | "failed" | "timed_out" | "cancelled"
   abort_controller: AbortController
@@ -313,6 +316,7 @@ function parseLinkNext(header: string | null): string | null {
 
 const BACKEND_TAGS = ["claude", "codex", "opencode", "anthropic", "openai", "command"] as const
 const COMPLETION_TAG_PREFIX = "move-to-"
+const WORKSPACE_TAG_PREFIX = "workspace-"
 
 export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): GoldenTicket | null {
   if (!card.tags.includes("agent-instructions")) return null
@@ -333,8 +337,17 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
       break
     }
     if (tag.startsWith(COMPLETION_TAG_PREFIX)) {
-      const columnName = tag.slice(COMPLETION_TAG_PREFIX.length).replace(/-/g, " ")
-      onComplete = `move:${columnName}`
+      const columnName = tagSuffix(tag, COMPLETION_TAG_PREFIX, value => value.replace(/-/g, " "))
+      if (columnName) onComplete = `move:${columnName}`
+      break
+    }
+  }
+
+  let workspace: string | undefined
+  for (const tag of card.tags) {
+    if (tag.startsWith(WORKSPACE_TAG_PREFIX)) {
+      const name = tagSuffix(tag, WORKSPACE_TAG_PREFIX)
+      if (name) workspace = name
       break
     }
   }
@@ -346,6 +359,7 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
     description: card.description,
     steps: card.steps ?? [],
     backend,
+    workspace,
     on_complete: onComplete,
     title: card.title,
   }
@@ -353,4 +367,9 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
 
 export function isGoldenTicket(card: FizzyCard): boolean {
   return card.tags.includes("agent-instructions")
+}
+
+function tagSuffix(tag: string, prefix: string, transform: (value: string) => string = value => value): string | undefined {
+  const value = transform(tag.slice(prefix.length)).trim()
+  return value.length > 0 ? value : undefined
 }

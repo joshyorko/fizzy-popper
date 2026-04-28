@@ -1,6 +1,7 @@
 import type { Config } from "./config.js"
 import type { FizzyCard, FizzyClient, GoldenTicket, AgentRun } from "./fizzy.js"
 import { buildPrompt, createBackend, type AgentResult } from "./agent.js"
+import { prepareAgentWorkspace } from "./workspace.js"
 import * as log from "./log.js"
 
 export class Supervisor {
@@ -121,12 +122,23 @@ export class Supervisor {
       const prompt = buildPrompt(goldenTicket, fullCard, comments)
 
       // Create and execute backend
-      const backend = createBackend(goldenTicket.backend, this.config)
-      log.agentStep(`Running ${backend.name}...`)
-      const result = await backend.execute(prompt, {
-        timeout: this.config.agent.timeout,
-        signal: run.abort_controller.signal,
-      })
+      const workspace = await prepareAgentWorkspace(this.config, goldenTicket, card.number)
+      run.workspace_path = workspace.cwd
+      if (workspace.name) run.workspace_name = workspace.name
+
+      const result = await (async (): Promise<AgentResult> => {
+        const backend = createBackend(goldenTicket.backend, this.config)
+        log.agentStep(`Running ${backend.name} in ${workspace.cwd}...`)
+        try {
+          return await backend.execute(prompt, {
+            timeout: this.config.agent.timeout,
+            signal: run.abort_controller.signal,
+            cwd: workspace.cwd,
+          })
+        } finally {
+          await workspace.cleanup()
+        }
+      })()
 
       if (cancelled()) return
 

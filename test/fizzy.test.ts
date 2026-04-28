@@ -104,11 +104,25 @@ describe("parseGoldenTicket", () => {
     expect(ticket!.on_complete).toBe("move:in progress")
   })
 
+  it("ignores empty move-to tags", () => {
+    const card = makeGoldenTicketCard({ tags: ["agent-instructions", "move-to-"] })
+    const ticket = parseGoldenTicket(card, "claude")
+
+    expect(ticket!.on_complete).toBe("comment")
+  })
+
   it("defaults on_complete to comment", () => {
     const card = makeGoldenTicketCard({ tags: ["agent-instructions"] })
     const ticket = parseGoldenTicket(card, "claude")
 
     expect(ticket!.on_complete).toBe("comment")
+  })
+
+  it("detects workspace tag", () => {
+    const card = makeGoldenTicketCard({ tags: ["agent-instructions", "workspace-api"] })
+    const ticket = parseGoldenTicket(card, "claude")
+
+    expect(ticket!.workspace).toBe("api")
   })
 
   it("uses card steps from the golden ticket", () => {

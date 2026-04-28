@@ -28,6 +28,22 @@ const BackendConfigSchema = z.object({
   }).optional(),
 }).default({})
 
+const WorkspaceIsolationSchema = z.enum(["none", "git-worktree"])
+
+const WorkspaceConfigSchema = z.object({
+  path: z.string(),
+  isolation: WorkspaceIsolationSchema.default("none"),
+  ref: z.string().default("HEAD"),
+  worktree_root: z.string().optional(),
+})
+
+const DefaultWorkspaceConfigSchema = z.object({
+  path: z.string().optional(),
+  isolation: WorkspaceIsolationSchema.default("none"),
+  ref: z.string().default("HEAD"),
+  worktree_root: z.string().optional(),
+}).default({})
+
 const ConfigSchema = z.object({
   fizzy: z.object({
     token: z.string(),
@@ -43,7 +59,10 @@ const ConfigSchema = z.object({
     max_concurrent: z.number().default(5),
     timeout: z.number().default(300_000),
     default_backend: z.string().default("claude"),
+    default_workspace: z.string().optional(),
   }).default({}),
+  workspace: DefaultWorkspaceConfigSchema,
+  workspaces: z.record(WorkspaceConfigSchema).default({}),
   backends: BackendConfigSchema,
   polling: z.object({
     interval: z.number().default(30_000),
