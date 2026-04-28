@@ -7,6 +7,8 @@ import type { Config } from "./config.js"
 import type { GoldenTicket } from "./fizzy.js"
 import * as log from "./log.js"
 
+const WORKTREE_ID_LENGTH = 8
+
 export interface PreparedWorkspace {
   cwd: string
   name?: string
@@ -39,7 +41,7 @@ export async function prepareAgentWorkspace(
 
   const root = resolve(workspace.worktree_root ?? join(tmpdir(), "fizzy-popper-worktrees"))
   mkdirSync(root, { recursive: true })
-  const worktreePath = join(root, `card-${cardNumber}-${randomUUID().slice(0, 8)}`)
+  const worktreePath = join(root, `card-${cardNumber}-${randomUUID().slice(0, WORKTREE_ID_LENGTH)}`)
 
   await execa("git", ["-C", sourcePath, "worktree", "add", "--detach", worktreePath, workspace.ref])
 

@@ -371,5 +371,5 @@ export function isGoldenTicket(card: FizzyCard): boolean {
 
 function tagSuffix(tag: string, prefix: string, transform: (value: string) => string = value => value): string | undefined {
   const value = transform(tag.slice(prefix.length)).trim()
-  return value || undefined
+  return value.length > 0 ? value : undefined
 }
