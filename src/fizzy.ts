@@ -337,8 +337,8 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
       break
     }
     if (tag.startsWith(COMPLETION_TAG_PREFIX)) {
-      const columnName = tag.slice(COMPLETION_TAG_PREFIX.length).replace(/-/g, " ")
-      onComplete = `move:${columnName}`
+      const columnName = tag.slice(COMPLETION_TAG_PREFIX.length).replace(/-/g, " ").trim()
+      if (columnName) onComplete = `move:${columnName}`
       break
     }
   }

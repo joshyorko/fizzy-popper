@@ -147,7 +147,7 @@ describe("Supervisor", () => {
       )
 
       await workspaceSupervisor.spawn(makeCard({ number: 42 }), makeGoldenTicket())
-      await new Promise(r => setTimeout(r, 100))
+      await vi.waitFor(() => expect(execute).toHaveBeenCalled())
 
       expect(execute).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cwd: "/work/repo" }))
     })
@@ -169,7 +169,7 @@ describe("Supervisor", () => {
       )
 
       await workspaceSupervisor.spawn(makeCard({ number: 42 }), makeGoldenTicket({ workspace: "api" }))
-      await new Promise(r => setTimeout(r, 100))
+      await vi.waitFor(() => expect(execute).toHaveBeenCalled())
 
       expect(execute).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cwd: "/work/api" }))
     })
