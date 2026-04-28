@@ -23,6 +23,7 @@ export interface BackendOptions {
   model?: string
   timeout: number
   signal: AbortSignal
+  cwd: string
 }
 
 export interface AgentBackend {
@@ -174,6 +175,7 @@ class ClaudeBackend implements AgentBackend {
     const model = options.model ?? this.model
     try {
       const result = await execa("claude", ["--print", "--model", model], {
+        cwd: options.cwd,
         input: prompt,
         timeout: options.timeout,
         cancelSignal: options.signal,
@@ -213,11 +215,11 @@ class CodexBackend implements AgentBackend {
           "--model",
           model,
           "--json",
-          "--ephemeral",
-          "--cd",
-          process.cwd(),
-        ],
-        { input: prompt, timeout: options.timeout, cancelSignal: options.signal },
+           "--ephemeral",
+           "--cd",
+          options.cwd,
+         ],
+        { cwd: options.cwd, input: prompt, timeout: options.timeout, cancelSignal: options.signal },
       )
       const output = parseCodexOutput(result.stdout)
       return {
@@ -243,7 +245,7 @@ class OpenCodeBackend implements AgentBackend {
       const result = await execa(
         "opencode",
         ["-p", prompt, "-f", "json", "-q"],
-        { timeout: options.timeout, cancelSignal: options.signal },
+        { cwd: options.cwd, timeout: options.timeout, cancelSignal: options.signal },
       )
       let output = result.stdout
       try {
@@ -363,6 +365,7 @@ class CommandBackend implements AgentBackend {
 
     try {
       const result = await execa("bash", ["-c", cmd], {
+        cwd: options.cwd,
         timeout: options.timeout,
         cancelSignal: options.signal,
       })

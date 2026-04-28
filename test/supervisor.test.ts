@@ -134,6 +134,46 @@ describe("Supervisor", () => {
       expect(client.postComment).toHaveBeenCalledWith(42, "<p>Agent result</p>")
     })
 
+    it("runs backend in configured workspace", async () => {
+      const { createBackend } = await import("../src/agent.js")
+      const execute = vi.fn().mockResolvedValue({
+        output: "<p>Agent result</p>",
+        success: true,
+      })
+      ;(createBackend as ReturnType<typeof vi.fn>).mockReturnValueOnce({ name: "mock", execute })
+      const workspaceSupervisor = new Supervisor(
+        makeConfig({ workspace: { path: "/work/repo", isolation: "none", ref: "HEAD", worktree_root: undefined } }),
+        client,
+      )
+
+      await workspaceSupervisor.spawn(makeCard({ number: 42 }), makeGoldenTicket())
+      await new Promise(r => setTimeout(r, 100))
+
+      expect(execute).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cwd: "/work/repo" }))
+    })
+
+    it("runs backend in golden-ticket workspace", async () => {
+      const { createBackend } = await import("../src/agent.js")
+      const execute = vi.fn().mockResolvedValue({
+        output: "<p>Agent result</p>",
+        success: true,
+      })
+      ;(createBackend as ReturnType<typeof vi.fn>).mockReturnValueOnce({ name: "mock", execute })
+      const workspaceSupervisor = new Supervisor(
+        makeConfig({
+          workspaces: {
+            api: { path: "/work/api", isolation: "none", ref: "HEAD", worktree_root: undefined },
+          },
+        }),
+        client,
+      )
+
+      await workspaceSupervisor.spawn(makeCard({ number: 42 }), makeGoldenTicket({ workspace: "api" }))
+      await new Promise(r => setTimeout(r, 100))
+
+      expect(execute).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cwd: "/work/api" }))
+    })
+
     it("moves run to recent after completion", async () => {
       const card = makeCard()
       await supervisor.spawn(card, makeGoldenTicket())

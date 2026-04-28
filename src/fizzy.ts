@@ -91,6 +91,7 @@ export interface GoldenTicket {
   description: string
   steps: FizzyStep[]
   backend: string
+  workspace?: string
   on_complete: "comment" | "close" | string // "move:<column_name>"
   title: string
 }
@@ -103,6 +104,8 @@ export interface AgentRun {
   card_title: string
   column_name: string
   backend_name: string
+  workspace_name?: string
+  workspace_path?: string
   started_at: Date
   status: "running" | "succeeded" | "failed" | "timed_out" | "cancelled"
   abort_controller: AbortController
@@ -313,6 +316,7 @@ function parseLinkNext(header: string | null): string | null {
 
 const BACKEND_TAGS = ["claude", "codex", "opencode", "anthropic", "openai", "command"] as const
 const COMPLETION_TAG_PREFIX = "move-to-"
+const WORKSPACE_TAG_PREFIX = "workspace-"
 
 export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): GoldenTicket | null {
   if (!card.tags.includes("agent-instructions")) return null
@@ -339,6 +343,15 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
     }
   }
 
+  let workspace: string | undefined
+  for (const tag of card.tags) {
+    if (tag.startsWith(WORKSPACE_TAG_PREFIX)) {
+      const name = tag.slice(WORKSPACE_TAG_PREFIX.length).trim()
+      if (name) workspace = name
+      break
+    }
+  }
+
   return {
     card_id: card.id,
     column_id: card.column.id,
@@ -346,6 +359,7 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
     description: card.description,
     steps: card.steps ?? [],
     backend,
+    workspace,
     on_complete: onComplete,
     title: card.title,
   }

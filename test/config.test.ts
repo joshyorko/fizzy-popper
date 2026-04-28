@@ -80,6 +80,8 @@ describe("config", () => {
       expect(config.agent.max_concurrent).toBe(5)
       expect(config.agent.timeout).toBe(300_000)
       expect(config.agent.default_backend).toBe("claude")
+      expect(config.workspace.isolation).toBe("none")
+      expect(config.workspaces).toEqual({})
       expect(config.polling.interval).toBe(30_000)
     })
 
@@ -168,6 +170,29 @@ describe("config", () => {
       expect(config.backends.codex?.model).toBe("gpt-5.5")
       expect(config.backends.codex?.args).toEqual(["--sandbox", "danger-full-access"])
       expect(config.backends.command?.run).toBe("my-script {prompt_file}")
+    })
+
+    it("accepts workspace configs", () => {
+      writeConfig({
+        fizzy: { token: "fz_t", account: "a" },
+        agent: { default_workspace: "api" },
+        workspace: { path: "/work/default", isolation: "git-worktree", ref: "main" },
+        workspaces: {
+          api: { path: "/work/api" },
+          web: { path: "/work/web", isolation: "git-worktree", ref: "develop", worktree_root: "/tmp/fizzy" },
+        },
+      })
+
+      const config = loadConfig(tempDir)
+      expect(config.agent.default_workspace).toBe("api")
+      expect(config.workspace).toMatchObject({ path: "/work/default", isolation: "git-worktree", ref: "main" })
+      expect(config.workspaces.api).toMatchObject({ path: "/work/api", isolation: "none", ref: "HEAD" })
+      expect(config.workspaces.web).toMatchObject({
+        path: "/work/web",
+        isolation: "git-worktree",
+        ref: "develop",
+        worktree_root: "/tmp/fizzy",
+      })
     })
   })
 

@@ -111,6 +111,13 @@ describe("parseGoldenTicket", () => {
     expect(ticket!.on_complete).toBe("comment")
   })
 
+  it("detects workspace tag", () => {
+    const card = makeGoldenTicketCard({ tags: ["agent-instructions", "workspace-api"] })
+    const ticket = parseGoldenTicket(card, "claude")
+
+    expect(ticket!.workspace).toBe("api")
+  })
+
   it("uses card steps from the golden ticket", () => {
     const card = makeGoldenTicketCard({
       steps: [

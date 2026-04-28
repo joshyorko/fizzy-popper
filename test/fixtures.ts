@@ -137,7 +137,15 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
       max_concurrent: 5,
       timeout: 300_000,
       default_backend: "claude",
+      default_workspace: undefined,
     },
+    workspace: {
+      path: undefined,
+      isolation: "none",
+      ref: "HEAD",
+      worktree_root: undefined,
+    },
+    workspaces: {},
     backends: {},
     polling: {
       interval: 30_000,

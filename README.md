@@ -150,6 +150,18 @@ agent:
   max_concurrent: 1
   timeout: 300000
   default_backend: claude
+  default_workspace: api
+
+workspace:
+  path: /work/default-repo
+
+workspaces:
+  api:
+    path: /work/api
+    isolation: git-worktree
+    ref: main
+  web:
+    path: /work/web
 
 polling:
   interval: 30000
@@ -177,6 +189,8 @@ backends:
 ```
 
 Values starting with `$` are resolved from environment variables.
+
+By default, agents run in the directory where `fizzy-popper start` is launched. Set `workspace.path` to run all agents in an explicit local repository instead. For many-repo setups, define named `workspaces` and set `agent.default_workspace`, or tag a golden ticket with `#workspace-<name>` (for example, `#workspace-api`) to select one. Set `isolation: git-worktree` on a workspace to run each card in a temporary detached git worktree that is removed after the agent finishes.
 
 ## Commands
 
