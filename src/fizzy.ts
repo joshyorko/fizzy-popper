@@ -337,7 +337,7 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
       break
     }
     if (tag.startsWith(COMPLETION_TAG_PREFIX)) {
-      const columnName = tag.slice(COMPLETION_TAG_PREFIX.length).replace(/-/g, " ").trim()
+      const columnName = tagSuffix(tag, COMPLETION_TAG_PREFIX, value => value.replace(/-/g, " "))
       if (columnName) onComplete = `move:${columnName}`
       break
     }
@@ -346,7 +346,7 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
   let workspace: string | undefined
   for (const tag of card.tags) {
     if (tag.startsWith(WORKSPACE_TAG_PREFIX)) {
-      const name = tag.slice(WORKSPACE_TAG_PREFIX.length).trim()
+      const name = tagSuffix(tag, WORKSPACE_TAG_PREFIX)
       if (name) workspace = name
       break
     }
@@ -367,4 +367,9 @@ export function parseGoldenTicket(card: FizzyCard, defaultBackend: string): Gold
 
 export function isGoldenTicket(card: FizzyCard): boolean {
   return card.tags.includes("agent-instructions")
+}
+
+function tagSuffix(tag: string, prefix: string, transform: (value: string) => string = value => value): string | undefined {
+  const value = transform(tag.slice(prefix.length)).trim()
+  return value || undefined
 }

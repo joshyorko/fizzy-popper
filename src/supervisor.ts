@@ -126,18 +126,19 @@ export class Supervisor {
       run.workspace_path = workspace.cwd
       if (workspace.name) run.workspace_name = workspace.name
 
-      let result!: AgentResult
-      try {
+      const result = await (async (): Promise<AgentResult> => {
         const backend = createBackend(goldenTicket.backend, this.config)
         log.agentStep(`Running ${backend.name} in ${workspace.cwd}...`)
-        result = await backend.execute(prompt, {
-          timeout: this.config.agent.timeout,
-          signal: run.abort_controller.signal,
-          cwd: workspace.cwd,
-        })
-      } finally {
-        await workspace.cleanup()
-      }
+        try {
+          return await backend.execute(prompt, {
+            timeout: this.config.agent.timeout,
+            signal: run.abort_controller.signal,
+            cwd: workspace.cwd,
+          })
+        } finally {
+          await workspace.cleanup()
+        }
+      })()
 
       if (cancelled()) return
 
