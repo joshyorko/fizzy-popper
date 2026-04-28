@@ -215,10 +215,10 @@ class CodexBackend implements AgentBackend {
           "--model",
           model,
           "--json",
-           "--ephemeral",
-           "--cd",
+          "--ephemeral",
+          "--cd",
           options.cwd,
-         ],
+        ],
         { cwd: options.cwd, input: prompt, timeout: options.timeout, cancelSignal: options.signal },
       )
       const output = parseCodexOutput(result.stdout)

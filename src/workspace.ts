@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { execa } from "execa"
 import type { Config } from "./config.js"
 import type { GoldenTicket } from "./fizzy.js"
+import * as log from "./log.js"
 
 export interface PreparedWorkspace {
   cwd: string
@@ -49,7 +50,12 @@ export async function prepareAgentWorkspace(
       try {
         await execa("git", ["-C", sourcePath, "worktree", "remove", "--force", worktreePath])
       } catch {
-        try { rmSync(worktreePath, { recursive: true, force: true }) } catch { /* ignore */ }
+        try {
+          rmSync(worktreePath, { recursive: true, force: true })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          log.warn(`Failed to remove workspace ${worktreePath}: ${message}`)
+        }
       }
     },
   }
