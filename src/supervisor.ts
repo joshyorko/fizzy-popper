@@ -206,7 +206,7 @@ export class Supervisor {
       const targetColumnName = action.slice(5)
       try {
         const columns = await this.client.listColumns(card.board.id)
-        const target = columns.find(c => c.name.toLowerCase() === targetColumnName.toLowerCase())
+        const target = resolveCompletionColumn(columns, targetColumnName)
         if (target) {
           await this.client.triageCard(card.number, target.id)
           return `comment posted, moved to ${target.name}`
@@ -231,4 +231,23 @@ function escapeHtml(str: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
+}
+
+type CompletionColumn = { id: string; name: string }
+
+const PSEUDO_COMPLETION_COLUMNS: Record<string, CompletionColumn> = {
+  "done": { id: "done", name: "Done" },
+}
+
+function resolveCompletionColumn(columns: CompletionColumn[], targetColumnName: string): CompletionColumn | null {
+  const target = normalizeColumnTarget(targetColumnName)
+  const realColumn = columns.find(column =>
+    normalizeColumnTarget(column.name) === target ||
+    normalizeColumnTarget(column.id) === target
+  )
+  return realColumn ?? PSEUDO_COMPLETION_COLUMNS[target] ?? null
+}
+
+function normalizeColumnTarget(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
 }
