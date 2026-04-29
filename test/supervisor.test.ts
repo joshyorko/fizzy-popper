@@ -263,6 +263,19 @@ describe("Supervisor", () => {
       expect(client.listColumns).toHaveBeenCalledWith("board-1")
       expect(client.triageCard).toHaveBeenCalledWith(42, "col-done")
     })
+
+    it("triages card to the built-in Done pseudo column", async () => {
+      ;(client.listColumns as ReturnType<typeof vi.fn>).mockResolvedValue([
+        makeColumn({ id: "col-ready", name: "Ready for Agents" }),
+      ])
+      const card = makeCard({ number: 42 })
+      const ticket = makeGoldenTicket({ on_complete: "move:done" })
+
+      await supervisor.spawn(card, ticket)
+      await new Promise(r => setTimeout(r, 100))
+
+      expect(client.triageCard).toHaveBeenCalledWith(42, "done")
+    })
   })
 
   describe("error handling", () => {
