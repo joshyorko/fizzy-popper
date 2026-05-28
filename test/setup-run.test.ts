@@ -56,43 +56,47 @@ describe("runSetup", () => {
       .mockResolvedValueOnce("recommended")
     vi.mocked(p.confirm).mockResolvedValue(true)
 
+    const requests: Array<{ url: string; method: string; body: string }> = []
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      const method = init?.method ?? "GET"
+      const url = input instanceof Request ? input.url : String(input)
+      const method = input instanceof Request ? input.method : init?.method ?? "GET"
+      const bodyText = input instanceof Request ? await input.clone().text() : String(init?.body ?? "")
 
-      if (url === "https://app.fizzy.do/my/identity") {
+      requests.push({ url, method, body: bodyText })
+
+      if (url === "https://app.fizzy.do/my/identity.json") {
         return jsonResponse({ accounts: [{ id: "acct-1", name: "Test Account", slug: "/test-account", user: {} }] })
       }
-      if (url === "https://app.fizzy.do/test-account/boards" && method === "GET") {
+      if (url === "https://app.fizzy.do/test-account/boards.json" && method === "GET") {
         return jsonResponse([])
       }
-      if (url === "https://app.fizzy.do/test-account/boards" && method === "POST") {
+      if (url === "https://app.fizzy.do/test-account/boards.json" && method === "POST") {
         return jsonResponse(makeBoard({ id: "board-new", name: "Agent Playground: fizzy-popper-setup-test" }), 201)
       }
-      if (url === "https://app.fizzy.do/test-account/boards/board-new/columns" && method === "POST") {
-        const body = JSON.parse(String(init?.body))
+      if (url === "https://app.fizzy.do/test-account/boards/board-new/columns.json" && method === "POST") {
+        const body = JSON.parse(bodyText)
         const name = String(body.name)
         return jsonResponse(makeColumn({
           id: name === "Done" ? "col-done" : "col-ready",
           name,
         }), 201)
       }
-      if (url === "https://app.fizzy.do/test-account/cards" && method === "POST") {
-        const body = JSON.parse(String(init?.body))
+      if (url === "https://app.fizzy.do/test-account/cards.json" && method === "POST") {
+        const body = JSON.parse(bodyText)
         const title = String(body.title)
         const number = title === "Smoke test the agent loop" ? 102 : 101
         return jsonResponse(makeCard({ id: `card-${number}`, number, title }), 201)
       }
-      if (url.match(/\/cards\/101\/taggings$/) && method === "POST") {
+      if (url.match(/\/cards\/101\/taggings\.json$/) && method === "POST") {
         return new Response(null, { status: 204 })
       }
-      if (url.match(/\/cards\/101\/triage$/) && method === "POST") {
+      if (url.match(/\/cards\/101\/triage\.json$/) && method === "POST") {
         return new Response(null, { status: 204 })
       }
-      if (url.match(/\/cards\/101\/steps$/) && method === "POST") {
+      if (url.match(/\/cards\/101\/steps\.json$/) && method === "POST") {
         return jsonResponse({ id: "step-new", content: "step", completed: false }, 201)
       }
-      if (url.match(/\/cards\/102\/triage$/) && method === "POST") {
+      if (url.match(/\/cards\/102\/triage\.json$/) && method === "POST") {
         return new Response(null, { status: 204 })
       }
 
@@ -108,10 +112,11 @@ describe("runSetup", () => {
       default_backend: "codex",
       max_concurrent: 1,
     })
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://app.fizzy.do/test-account/cards/101/taggings",
-      expect.objectContaining({ body: JSON.stringify({ tag_title: "agent-instructions" }) }),
-    )
+    expect(requests).toContainEqual(expect.objectContaining({
+      url: "https://app.fizzy.do/test-account/cards/101/taggings.json",
+      method: "POST",
+      body: JSON.stringify({ tag_title: "agent-instructions" }),
+    }))
     expect(p.multiselect).not.toHaveBeenCalled()
     expect(p.outro).toHaveBeenCalledWith(expect.stringContaining("fizzy-popper start"))
   })

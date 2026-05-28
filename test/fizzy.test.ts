@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createHmac } from "node:crypto"
+import type { Mock } from "vitest"
 import {
   parseGoldenTicket,
   isGoldenTicket,
@@ -8,6 +9,49 @@ import {
   FizzyClient,
 } from "../src/fizzy.js"
 import { makeCard, makeGoldenTicketCard, makeColumn, makeConfig, makeBoard } from "./fixtures.js"
+
+const sdkMock = vi.hoisted(() => {
+  const rootClient = {
+    identity: {
+      me: vi.fn(),
+    },
+  }
+  const accountClient = {
+    boards: {
+      list: vi.fn(),
+      create: vi.fn(),
+      get: vi.fn(),
+    },
+    columns: {
+      list: vi.fn(),
+      create: vi.fn(),
+    },
+    cards: {
+      list: vi.fn(),
+      create: vi.fn(),
+      get: vi.fn(),
+      close: vi.fn(),
+      triage: vi.fn(),
+      tag: vi.fn(),
+    },
+    steps: {
+      create: vi.fn(),
+    },
+    comments: {
+      list: vi.fn(),
+      create: vi.fn(),
+    },
+  }
+  const createFizzyClient = vi.fn(({ baseUrl }: { baseUrl: string }) =>
+    baseUrl.endsWith("/123") || baseUrl.endsWith("/a") ? accountClient : rootClient,
+  )
+
+  return { rootClient, accountClient, createFizzyClient }
+})
+
+vi.mock("@37signals/fizzy", () => ({
+  createFizzyClient: sdkMock.createFizzyClient,
+}))
 
 describe("parseGoldenTicket", () => {
   it("returns null for a card without agent-instructions tag", () => {
@@ -234,151 +278,98 @@ describe("FizzyClient", () => {
   let client: FizzyClient
 
   beforeEach(() => {
+    vi.clearAllMocks()
+    resetSdkDefaults()
     client = new FizzyClient(makeConfig())
   })
 
-  describe("url construction", () => {
-    it("constructs correct board list URL", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify([]), { status: 200 }),
-      )
-
+  describe("client construction", () => {
+    it("constructs root and account-scoped SDK clients", async () => {
       await client.listBoards()
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/boards",
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            "Authorization": "Bearer fz_test_token",
-          }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.createFizzyClient).toHaveBeenNthCalledWith(1, {
+        accessToken: "fz_test_token",
+        baseUrl: "https://app.fizzy.do",
+      })
+      expect(sdkMock.createFizzyClient).toHaveBeenNthCalledWith(2, {
+        accessToken: "fz_test_token",
+        baseUrl: "https://app.fizzy.do/123",
+      })
     })
 
-    it("strips trailing slash from api_url", () => {
+    it("strips trailing slash from api_url", async () => {
       const clientWithSlash = new FizzyClient(makeConfig({
         fizzy: { token: "t", account: "a", api_url: "https://app.fizzy.do/" },
       }))
 
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify([]), { status: 200 }),
-      )
+      await clientWithSlash.listBoards()
 
-      clientWithSlash.listBoards()
-
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/a/boards",
-        expect.any(Object),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.createFizzyClient).toHaveBeenLastCalledWith({
+        accessToken: "t",
+        baseUrl: "https://app.fizzy.do/a",
+      })
     })
   })
 
   describe("listCards", () => {
-    it("adds board_ids query params", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: {},
-        }),
-      )
-
+    it("maps board_ids to SDK boardIds", async () => {
       await client.listCards({ board_ids: ["b1", "b2"] })
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards?board_ids[]=b1&board_ids[]=b2",
-        expect.any(Object),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.cards.list).toHaveBeenCalledWith({
+        boardIds: ["b1", "b2"],
+      })
     })
   })
 
-  describe("paginatedRequest", () => {
-    it("follows Link header for pagination", async () => {
+  describe("paginated lists", () => {
+    it("returns the SDK list result as a plain array", async () => {
       const page1 = [makeCard({ id: "card-1" })]
       const page2 = [makeCard({ id: "card-2" })]
-
-      const fetchSpy = vi.spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify(page1), {
-            status: 200,
-            headers: { "Link": '<https://app.fizzy.do/123/cards?page=2>; rel="next"' },
-          }),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify(page2), { status: 200 }),
-        )
+      mocked(sdkMock.accountClient.cards.list).mockResolvedValue([...page1, ...page2])
 
       const results = await client.listCards()
 
       expect(results).toHaveLength(2)
       expect(results[0].id).toBe("card-1")
       expect(results[1].id).toBe("card-2")
-      expect(fetchSpy).toHaveBeenCalledTimes(2)
-
-      fetchSpy.mockRestore()
     })
   })
 
   describe("error handling", () => {
-    it("throws on non-ok response", async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response("Not found", { status: 404, statusText: "Not Found" }),
-      )
+    it("wraps SDK errors with a Fizzy API prefix", async () => {
+      mocked(sdkMock.accountClient.cards.get).mockRejectedValue(new Error("Not found"))
 
-      await expect(client.getCard(42)).rejects.toThrow("Fizzy API 404")
-
-      vi.restoreAllMocks()
+      await expect(client.getCard(42)).rejects.toThrow("Fizzy API: Not found")
     })
   })
 
   describe("mutations", () => {
-    it("createBoard sends board fields", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify(makeBoard({ id: "board-new", name: "Agent Playground" })), { status: 201 }),
-      )
+    it("createBoard maps board fields to the SDK", async () => {
+      mocked(sdkMock.accountClient.boards.create).mockResolvedValue(makeBoard({ id: "board-new", name: "Agent Playground" }))
 
       const result = await client.createBoard({ name: "Agent Playground", all_access: true })
 
       expect(result.id).toBe("board-new")
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/boards",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ name: "Agent Playground", all_access: true }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.boards.create).toHaveBeenCalledWith({
+        name: "Agent Playground",
+        allAccess: true,
+      })
     })
 
-    it("createColumn sends column fields", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify(makeColumn({ id: "col-ready", name: "Ready for Agents" })), { status: 201 }),
-      )
+    it("createColumn delegates to the SDK with column fields", async () => {
+      mocked(sdkMock.accountClient.columns.create).mockResolvedValue(makeColumn({ id: "col-ready", name: "Ready for Agents" }))
 
       const result = await client.createColumn("board-new", { name: "Ready for Agents", color: "blue" })
 
       expect(result.id).toBe("col-ready")
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/boards/board-new/columns",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ name: "Ready for Agents", color: "blue" }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.columns.create).toHaveBeenCalledWith("board-new", {
+        name: "Ready for Agents",
+        color: "blue",
+      })
     })
 
-    it("createCard sends board, title, and description", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify(makeCard({ id: "card-new", number: 77, title: "Triage Agent" })), { status: 201 }),
-      )
+    it("createCard maps board, title, and description to the SDK", async () => {
+      mocked(sdkMock.accountClient.cards.create).mockResolvedValue(makeCard({ id: "card-new", number: 77, title: "Triage Agent" }))
 
       const result = await client.createCard({
         board_id: "board-new",
@@ -387,124 +378,86 @@ describe("FizzyClient", () => {
       })
 
       expect(result.number).toBe(77)
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({
-            board_id: "board-new",
-            title: "Triage Agent",
-            description: "Work this column.",
-          }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.cards.create).toHaveBeenCalledWith({
+        boardId: "board-new",
+        title: "Triage Agent",
+        description: "Work this column.",
+      })
     })
 
-    it("createStep sends step content and completed state", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ id: "step-new", content: "Inspect the repository", completed: false }), { status: 201 }),
-      )
+    it("createStep delegates to the SDK with step content and completed state", async () => {
+      mocked(sdkMock.accountClient.steps.create).mockResolvedValue({ id: "step-new", content: "Inspect the repository", completed: false })
 
       const result = await client.createStep(77, { content: "Inspect the repository", completed: false })
 
       expect(result.id).toBe("step-new")
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards/77/steps",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ content: "Inspect the repository", completed: false }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.steps.create).toHaveBeenCalledWith(77, {
+        content: "Inspect the repository",
+        completed: false,
+      })
     })
 
-    it("closeCard sends POST to closure endpoint", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(null, { status: 204 }),
-      )
-
+    it("closeCard delegates to the SDK close method", async () => {
       await client.closeCard(42)
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards/42/closure",
-        expect.objectContaining({ method: "POST" }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.cards.close).toHaveBeenCalledWith(42)
     })
 
-    it("triageCard sends column_id in body", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(null, { status: 204 }),
-      )
-
+    it("triageCard maps column_id to SDK columnId", async () => {
       await client.triageCard(42, "col-done")
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards/42/triage",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ column_id: "col-done" }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.cards.triage).toHaveBeenCalledWith(42, {
+        columnId: "col-done",
+      })
     })
 
     it("postComment sends comment body", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(null, { status: 204 }),
-      )
-
       await client.postComment(42, "<p>Agent result</p>")
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards/42/comments",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ comment: { body: "<p>Agent result</p>" } }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.comments.create).toHaveBeenCalledWith(42, {
+        body: "<p>Agent result</p>",
+      })
     })
 
-    it("toggleTag sends tag_title", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(null, { status: 204 }),
-      )
-
+    it("toggleTag maps tag_title to SDK tagTitle", async () => {
       await client.toggleTag(42, "pi-error")
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/123/cards/42/taggings",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ tag_title: "pi-error" }),
-        }),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.accountClient.cards.tag).toHaveBeenCalledWith(42, {
+        tagTitle: "pi-error",
+      })
     })
   })
 
   describe("getIdentity", () => {
-    it("fetches /my/identity without account slug", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ accounts: [] }), { status: 200 }),
-      )
+    it("uses the accountless root SDK client", async () => {
+      mocked(sdkMock.rootClient.identity.me).mockResolvedValue({ accounts: [] })
 
       await client.getIdentity()
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "https://app.fizzy.do/my/identity",
-        expect.any(Object),
-      )
-
-      fetchSpy.mockRestore()
+      expect(sdkMock.rootClient.identity.me).toHaveBeenCalled()
+      expect(sdkMock.accountClient.boards.list).not.toHaveBeenCalled()
     })
   })
 })
+
+function resetSdkDefaults(): void {
+  mocked(sdkMock.accountClient.boards.list).mockResolvedValue([])
+  mocked(sdkMock.accountClient.boards.create).mockResolvedValue(makeBoard())
+  mocked(sdkMock.accountClient.boards.get).mockResolvedValue({})
+  mocked(sdkMock.accountClient.columns.list).mockResolvedValue([])
+  mocked(sdkMock.accountClient.columns.create).mockResolvedValue(makeColumn())
+  mocked(sdkMock.accountClient.cards.list).mockResolvedValue([])
+  mocked(sdkMock.accountClient.cards.create).mockResolvedValue(makeCard())
+  mocked(sdkMock.accountClient.cards.get).mockResolvedValue(makeCard())
+  mocked(sdkMock.accountClient.cards.close).mockResolvedValue(undefined)
+  mocked(sdkMock.accountClient.cards.triage).mockResolvedValue(undefined)
+  mocked(sdkMock.accountClient.cards.tag).mockResolvedValue(undefined)
+  mocked(sdkMock.accountClient.steps.create).mockResolvedValue({ id: "step-1", content: "Step", completed: false })
+  mocked(sdkMock.accountClient.comments.list).mockResolvedValue([])
+  mocked(sdkMock.accountClient.comments.create).mockResolvedValue({})
+  mocked(sdkMock.rootClient.identity.me).mockResolvedValue({ accounts: [] })
+}
+
+function mocked<T extends (...args: never[]) => unknown>(fn: T): Mock {
+  return fn as Mock
+}
